@@ -49,6 +49,12 @@ select {
   height: 40px;
   padding: 0 12px;
 }
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: #256bd3;
+}
 textarea {
   padding: 12px;
   resize: vertical;

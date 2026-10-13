@@ -159,6 +159,31 @@ function createApp({ store = createStore(), mailClient = createMailClient() } = 
     response.json({ count: parsed.length });
   });
 
+  app.post('/api/mailboxes/export', (request, response) => {
+    const ids = request.body?.ids;
+    if (!Array.isArray(ids) || ids.length > 500 || ids.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+      return response.status(400).json({ error: '请输入有效的邮箱 ID 列表' });
+    }
+    const rows = ids.length
+      ? store.db.prepare(`SELECT * FROM mailboxes WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY email COLLATE NOCASE`).all(...ids)
+      : store.db.prepare('SELECT * FROM mailboxes ORDER BY email COLLATE NOCASE').all();
+    response.json({ mailboxes: rows.map((row) => ({
+      email: row.email, clientId: row.client_id, refreshToken: store.decrypt(row.refresh_token),
+    })) });
+  });
+
+  app.post('/api/mailboxes/delete-batch', (request, response) => {
+    const ids = request.body?.ids;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 500
+      || ids.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+      return response.status(400).json({ error: '请选择有效的邮箱' });
+    }
+    const placeholders = [...new Set(ids)].map(() => '?').join(',');
+    const uniqueIds = [...new Set(ids)];
+    const deleted = store.db.prepare(`DELETE FROM mailboxes WHERE id IN (${placeholders})`).run(...uniqueIds).changes;
+    response.json({ deleted });
+  });
+
   app.put('/api/mailboxes/:id', (request, response) => {
     const id = Number(request.params.id);
     const existing = store.db.prepare('SELECT * FROM mailboxes WHERE id = ?').get(id);

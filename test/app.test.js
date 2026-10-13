@@ -75,6 +75,10 @@ test('admin, mailboxes, platform states and manual refresh work together', async
   const stored = store.db.prepare('SELECT refresh_token FROM mailboxes WHERE id = ?').get(mailboxId).refresh_token;
   assert.notEqual(stored, 'secret-token');
   assert.equal(store.decrypt(stored), 'secret-token');
+  r = await request('POST', '/api/mailboxes/export', { ids: [mailboxId] });
+  assert.deepEqual(r.result.mailboxes, [{
+    email: 'one@outlook.com', clientId: 'client-a', refreshToken: 'secret-token',
+  }]);
 
   r = await request('POST', '/api/platforms', { name: 'GPTZero' });
   const firstPlatform = r.result.platform.id;
@@ -117,4 +121,10 @@ test('admin, mailboxes, platform states and manual refresh work together', async
   assert.equal(r.response.status, 401);
   r = await request('POST', '/api/auth/login', { username: 'admin', password: 'a-strong-password-123' }, false);
   assert.equal(r.response.status, 200);
+  cookie = r.response.headers.get('set-cookie').split(';')[0];
+  csrf = r.result.csrfToken;
+  r = await request('POST', '/api/mailboxes/delete-batch', { ids: [mailboxId] });
+  assert.equal(r.result.deleted, 1);
+  r = await request('GET', `/api/platforms/${firstPlatform}/registrations`);
+  assert.deepEqual(r.result.mailboxes, []);
 });

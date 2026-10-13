@@ -4,7 +4,7 @@
     csrf: null, username: '', initialized: false,
     page: 'all', mailboxes: [], platforms: [], platformId: null,
     registrations: [], detailId: null, detailFolder: 'inbox',
-    messages: { inbox: [], junk: [] }, editingId: null,
+    messages: { inbox: [], junk: [] }, editingId: null, selectedIds: new Set(),
   };
   let toastTimer;
   let registrationsRequest = 0;
@@ -117,6 +117,8 @@
       api('GET', '/api/mailboxes'), api('GET', '/api/platforms'),
     ]);
     state.mailboxes = mailboxes.mailboxes;
+    const currentIds = new Set(state.mailboxes.map((mailbox) => mailbox.id));
+    for (const id of state.selectedIds) if (!currentIds.has(id)) state.selectedIds.delete(id);
     state.platforms = platforms.platforms;
     if (!state.platformId && state.platforms.length) state.platformId = state.platforms[0].id;
     if (state.platformId && !state.platforms.some((item) => item.id === state.platformId)) {
@@ -182,14 +184,17 @@
     const checks = mailboxes.map((mailbox) => mailbox.lastCheckedAt).filter(Boolean).sort();
     $('stat-checked').textContent = checks.length ? formatDate(checks[checks.length - 1], true) : '—';
     $('all-list-count').textContent = `展示 ${filtered.length} / ${mailboxes.length} 个邮箱`;
+    $('select-all').checked = filtered.length > 0 && filtered.every((mailbox) => state.selectedIds.has(mailbox.id));
+    $('select-all').indeterminate = filtered.some((mailbox) => state.selectedIds.has(mailbox.id)) && !$('select-all').checked;
     $('all-rows').innerHTML = filtered.length ? filtered.map((mailbox) => {
       const days = daysSince(mailbox.lastReceivedAt);
-      return `<tr><td>${escapeHtml(mailbox.email)}${mailbox.lastError ? `<span class="subtle">上次检查失败：${escapeHtml(mailbox.lastError)}</span>` : ''}</td>
+      return `<tr><td><input type="checkbox" data-select-mailbox="${mailbox.id}" aria-label="选择 ${escapeHtml(mailbox.email)}" ${state.selectedIds.has(mailbox.id) ? 'checked' : ''}></td>
+        <td>${escapeHtml(mailbox.email)}${mailbox.lastError ? `<span class="subtle">上次检查失败：${escapeHtml(mailbox.lastError)}</span>` : ''}</td>
         <td>${escapeHtml(receivedLabel(mailbox))}</td>
         <td>${days === null ? '—' : `${days} 天`}</td>
         <td>${mailbox.lastCheckedAt ? escapeHtml(formatDate(mailbox.lastCheckedAt, true)) : '—'}</td>
         <td>${mailboxActions(mailbox)}</td></tr>`;
-    }).join('') : '<tr><td class="empty-row" colspan="5">暂无邮箱。点击“添加邮箱”开始。</td></tr>';
+    }).join('') : '<tr><td class="empty-row" colspan="6">暂无邮箱。点击“添加邮箱”开始。</td></tr>';
   }
 
   function renderPlatform() {
@@ -331,6 +336,50 @@
   $('platform-search').addEventListener('input', renderPlatform);
   $('platform-sort').addEventListener('change', renderPlatform);
   $('all-rows').addEventListener('click', onRowAction);
+  $('all-rows').addEventListener('change', (event) => {
+    const id = Number(event.target.dataset.selectMailbox);
+    if (!id) return;
+    if (event.target.checked) state.selectedIds.add(id); else state.selectedIds.delete(id);
+    const boxes = [...document.querySelectorAll('#all-rows [data-select-mailbox]')];
+    $('select-all').checked = boxes.length > 0 && boxes.every((box) => box.checked);
+    $('select-all').indeterminate = boxes.some((box) => box.checked) && !$('select-all').checked;
+  });
+  $('select-all').addEventListener('change', (event) => {
+    document.querySelectorAll('#all-rows [data-select-mailbox]').forEach((box) => {
+      box.checked = event.target.checked;
+      const id = Number(box.dataset.selectMailbox);
+      if (box.checked) state.selectedIds.add(id); else state.selectedIds.delete(id);
+    });
+  });
+  $('export-button').addEventListener('click', async () => {
+    const ids = [...state.selectedIds];
+    if (!state.mailboxes.length) return toast('没有可导出的邮箱', true);
+    if (!confirm(`导出${ids.length ? `选中的 ${ids.length} 个` : '全部'}邮箱？导出文件含刷新令牌，请妥善保管。`)) return;
+    try {
+      const result = await api('POST', '/api/mailboxes/export', { ids });
+      const content = result.mailboxes.map((mailbox) => [mailbox.email, mailbox.clientId, mailbox.refreshToken].join('----')).join('\n') + '\n';
+      const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `mailboard-export-${new Date().toISOString().slice(0, 10)}.txt`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(`已导出 ${result.mailboxes.length} 个邮箱`);
+    } catch (error) { toast(error.message, true); }
+  });
+  $('delete-selected-button').addEventListener('click', async () => {
+    const ids = [...state.selectedIds];
+    if (!ids.length) return toast('请先选择要删除的邮箱', true);
+    if (!confirm(`删除选中的 ${ids.length} 个邮箱？其平台状态和已保存邮件也会删除。`)) return;
+    try {
+      const result = await api('POST', '/api/mailboxes/delete-batch', { ids });
+      state.selectedIds.clear();
+      await loadData();
+      toast(`已删除 ${result.deleted} 个邮箱`);
+    } catch (error) { toast(error.message, true); }
+  });
   $('platform-rows').addEventListener('click', onRowAction);
   $('add-mailbox-button').addEventListener('click', () => openMailboxForm());
   $('import-button').addEventListener('click', () => openDialog('import-dialog'));
