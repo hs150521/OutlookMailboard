@@ -1,0 +1,16 @@
+services:
+  mailboard:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATA_DIR: /app/data
+      TRUST_PROXY: "${TRUST_PROXY:-0}"
+    volumes:
+      - mailboard_data:/app/data
+
+volumes:
+  mailboard_data:

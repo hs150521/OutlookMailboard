@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Mailboard · 多邮箱管理</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div id="loading" class="loading-screen">正在加载 Mailboard…</div>
+
+  <main id="auth-screen" class="auth-screen hidden">
+    <div class="auth-card">
+      <div class="brand-mark">M</div>
+      <p class="eyebrow">PERSONAL MAILBOX CONSOLE</p>
+      <h1 id="auth-title">欢迎使用 Mailboard</h1>
+      <p id="auth-description" class="muted">设置管理员账号，开始管理你的邮箱。</p>
+      <form id="auth-form">
+        <label for="auth-username">用户名</label>
+        <input id="auth-username" name="username" autocomplete="username" required minlength="3" maxlength="32">
+        <label for="auth-password">密码</label>
+        <input id="auth-password" name="password" type="password" autocomplete="new-password" required minlength="12">
+        <div id="confirm-field">
+          <label for="auth-confirm">确认密码</label>
+          <input id="auth-confirm" name="confirm" type="password" autocomplete="new-password" required minlength="12">
+        </div>
+        <button id="auth-submit" class="button primary full" type="submit">完成设置</button>
+      </form>
+      <p class="auth-note">仅供一位管理员使用 · 邮箱资料保存在服务器</p>
+    </div>
+  </main>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="brand-mark">M</div><div><strong>Mailboard</strong><span>MAILBOX CONSOLE</span></div></div>
+      <div class="sidebar-label">工作区</div>
+      <nav aria-label="主要导航">
+        <button id="nav-all" class="nav-item active" data-page="all" type="button"><span class="nav-icon">▦</span>全部平台</button>
+        <button id="nav-platform" class="nav-item" data-page="platform" type="button"><span class="nav-icon">◈</span>指定平台</button>
+      </nav>
+      <div class="sidebar-bottom"><span class="sidebar-dot"></span><span>私人管理后台</span></div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar"><div class="breadcrumb">MAILBOARD <span>/</span> <span id="breadcrumb-page">全部平台</span></div><div class="topbar-user"><span id="admin-name"></span><button id="logout-button" class="text-button" type="button">退出登录</button></div></header>
+      <main class="main-content">
+        <section id="all-page">
+          <div class="page-heading"><div><p class="eyebrow">MAILBOX OVERVIEW</p><h1>全部平台</h1><p class="muted">按最后收信时间查看所有邮箱，只在需要时手动检查。</p></div><button id="add-mailbox-button" class="button primary" type="button">＋ 添加邮箱</button></div>
+          <div class="stats-grid">
+            <div class="stat-card"><span>邮箱总数</span><strong id="stat-count">0</strong><small>当前管理的邮箱</small></div>
+            <div class="stat-card"><span>最久未收信</span><strong id="stat-oldest">—</strong><small>已检查邮箱中的最长间隔</small></div>
+            <div class="stat-card"><span>上次手动检查</span><strong id="stat-checked">—</strong><small>不会自动轮询</small></div>
+          </div>
+          <section class="panel"><div class="panel-heading"><div><h2>邮箱列表</h2><p id="all-list-count" class="muted">—</p></div><div class="toolbar"><input id="all-search" type="search" placeholder="搜索邮箱地址" aria-label="搜索邮箱地址"><select id="all-sort" aria-label="邮箱排序"><option value="oldest">最久未收信优先</option><option value="newest">最近收信优先</option></select><button id="import-button" class="button secondary" type="button">导入邮箱</button></div></div><div class="table-scroll"><table><thead><tr><th>邮箱地址</th><th>上次收信</th><th>距今天数</th><th>上次检查</th><th>操作</th></tr></thead><tbody id="all-rows"></tbody></table></div></section>
+        </section>
+
+        <section id="platform-page" class="hidden">
+          <div class="page-heading"><div><p class="eyebrow">PLATFORM REGISTRATION</p><h1>指定平台</h1><p class="muted">为每个平台分别记录邮箱的注册状态。</p></div><button id="add-platform-button" class="button primary" type="button">＋ 添加平台</button></div>
+          <div class="platform-pick panel"><div><span class="field-label">当前平台</span><select id="platform-select" aria-label="选择平台"><option value="">请选择平台</option></select></div><p id="platform-summary" class="muted">新平台下的所有邮箱默认未注册。</p></div>
+          <section class="panel"><div class="panel-heading"><div><h2 id="platform-list-title">邮箱注册情况</h2><p id="platform-list-count" class="muted">—</p></div><div class="toolbar"><input id="platform-search" type="search" placeholder="搜索邮箱地址" aria-label="搜索平台邮箱"><select id="platform-sort" aria-label="注册状态排序"><option value="unregistered">未注册优先</option><option value="registered">已注册优先</option></select></div></div><div class="table-scroll"><table><thead><tr><th>邮箱地址</th><th>上次收信</th><th>注册状态</th><th>操作</th></tr></thead><tbody id="platform-rows"></tbody></table></div></section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="mailbox-dialog" class="modal"><form id="mailbox-form"><div class="modal-header"><div><p class="eyebrow">MAILBOX</p><h2 id="mailbox-modal-title">添加邮箱</h2></div><button class="icon-button" type="button" data-close="mailbox-dialog" aria-label="关闭">×</button></div><div class="modal-body"><label for="mailbox-email">邮箱地址</label><input id="mailbox-email" type="email" required placeholder="mail01@outlook.com"><label for="mailbox-client">客户端 ID</label><input id="mailbox-client" required placeholder="Microsoft 应用的 client_id"><label for="mailbox-token">刷新令牌</label><textarea id="mailbox-token" rows="4" placeholder="refresh_token"></textarea><p id="mailbox-token-help" class="field-help">令牌会在服务器端加密保存，不会在列表中显示。</p></div><div class="modal-actions"><button class="button secondary" type="button" data-close="mailbox-dialog">取消</button><button class="button primary" type="submit">保存邮箱</button></div></form></dialog>
+
+  <dialog id="import-dialog" class="modal"><form id="import-form"><div class="modal-header"><div><p class="eyebrow">BULK IMPORT</p><h2>导入邮箱</h2></div><button class="icon-button" type="button" data-close="import-dialog" aria-label="关闭">×</button></div><div class="modal-body"><p class="muted">每行一个邮箱。支持 <code>邮箱----客户端ID----刷新令牌</code>，也兼容原项目的四段格式；其中密码字段会被忽略。</p><label for="import-file">选择 TXT / CSV 文件</label><input id="import-file" type="file" accept=".txt,.csv,text/plain,text/csv"><label for="import-text">或粘贴内容</label><textarea id="import-text" rows="10" placeholder="mail01@outlook.com----client_id----refresh_token"></textarea><p class="field-help">导入相同邮箱会更新授权信息。文件内容只会发送到当前服务器。</p></div><div class="modal-actions"><button class="button secondary" type="button" data-close="import-dialog">取消</button><button class="button primary" type="submit">导入</button></div></form></dialog>
+
+  <dialog id="platform-dialog" class="modal small-modal"><form id="platform-form"><div class="modal-header"><div><p class="eyebrow">NEW PLATFORM</p><h2>添加平台</h2></div><button class="icon-button" type="button" data-close="platform-dialog" aria-label="关闭">×</button></div><div class="modal-body"><label for="platform-name">平台名称</label><input id="platform-name" required maxlength="80" placeholder="例如 GPTZero"><p class="field-help">创建后，所有邮箱默认显示“未注册”。</p></div><div class="modal-actions"><button class="button secondary" type="button" data-close="platform-dialog">取消</button><button class="button primary" type="submit">添加平台</button></div></form></dialog>
+
+  <dialog id="detail-dialog" class="modal detail-modal"><div class="modal-header"><div><p class="eyebrow">MAILBOX DETAIL</p><h2 id="detail-title">邮箱详情</h2><p id="detail-meta" class="muted"></p></div><button class="icon-button" type="button" data-close="detail-dialog" aria-label="关闭">×</button></div><div class="detail-toolbar"><div class="tabs"><button id="tab-inbox" class="tab active" type="button" data-folder="inbox">收件箱</button><button id="tab-junk" class="tab" type="button" data-folder="junk">垃圾邮件</button></div><div class="toolbar"><button id="detail-clear" class="button danger" type="button">清空当前文件夹</button><button id="detail-refresh" class="button primary" type="button">手动刷新</button></div></div><div class="detail-content"><div id="message-list" class="message-list"></div><div class="message-preview"><div id="message-subject" class="message-subject">选择一封邮件查看内容</div><div id="message-sender" class="muted"></div><pre id="message-body" class="message-body"></pre></div></div></dialog>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>

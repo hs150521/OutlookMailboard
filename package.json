@@ -1,0 +1,21 @@
+{
+  "name": "outlook-mailboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A private, self-hosted mailbox dashboard for Microsoft accounts",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.21.2",
+    "imapflow": "^1.0.194",
+    "mailparser": "^3.9.0"
+  }
+}
