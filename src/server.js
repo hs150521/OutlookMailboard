@@ -81,7 +81,7 @@ function createApp({ store = createStore(), mailClient = createMailClient() } = 
     const username = String(request.body?.username || '').trim();
     const password = String(request.body?.password || '');
     if (!/^[\p{L}\p{N}_-]{3,32}$/u.test(username)) return response.status(400).json({ error: '用户名须为 3 至 32 个字母、数字、下划线或连字符' });
-    if (password.length < 12 || password.length > 128) return response.status(400).json({ error: '密码须为 12 至 128 个字符' });
+    if (password.length < 10 || password.length > 128) return response.status(400).json({ error: '密码须为 10 至 128 个字符' });
     try {
       store.db.prepare('INSERT INTO admin (id, username, password_hash) VALUES (1, ?, ?)')
         .run(username, hashPassword(password));
@@ -116,6 +116,24 @@ function createApp({ store = createStore(), mailClient = createMailClient() } = 
     }
     request.mailboardSession = session;
     next();
+  });
+
+  app.post('/api/auth/password', (request, response) => {
+    const currentPassword = String(request.body?.currentPassword || '');
+    const newPassword = String(request.body?.newPassword || '');
+    if (newPassword.length < 10 || newPassword.length > 128) {
+      return response.status(400).json({ error: '新密码须为 10 至 128 个字符' });
+    }
+    const admin = store.db.prepare('SELECT password_hash FROM admin WHERE id = 1').get();
+    if (!admin || !verifyPassword(currentPassword, admin.password_hash)) {
+      return response.status(400).json({ error: '当前密码不正确' });
+    }
+    const passwordHash = hashPassword(newPassword);
+    store.db.transaction(() => {
+      store.db.prepare('UPDATE admin SET password_hash = ? WHERE id = 1').run(passwordHash);
+      store.db.prepare('DELETE FROM sessions').run();
+    })();
+    response.json({ ok: true, csrfToken: issueSession(request, response, store) });
   });
 
   app.post('/api/auth/logout', (request, response) => {
@@ -287,6 +305,14 @@ function createApp({ store = createStore(), mailClient = createMailClient() } = 
       if (error.code?.startsWith('SQLITE_CONSTRAINT')) return response.status(409).json({ error: '平台已存在' });
       throw error;
     }
+  });
+
+  app.delete('/api/platforms/:id', (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) return response.status(400).json({ error: '平台 ID 无效' });
+    const result = store.db.prepare('DELETE FROM platforms WHERE id = ?').run(id);
+    if (!result.changes) return response.status(404).json({ error: '平台不存在' });
+    response.json({ deleted: result.changes });
   });
 
   app.get('/api/platforms/:id/registrations', (request, response) => {

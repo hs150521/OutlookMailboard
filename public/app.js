@@ -4,7 +4,10 @@
     csrf: null, username: '', initialized: false,
     page: 'all', mailboxes: [], platforms: [], platformId: null,
     registrations: [], detailId: null, detailFolder: 'inbox',
-    messages: { inbox: [], junk: [] }, editingId: null, selectedIds: new Set(),
+    messages: { inbox: [], junk: [] }, editingId: null, mailboxMode: 'single', selectedIds: new Set(),
+    allSort: { key: 'lastReceivedAt', direction: 'asc' },
+    platformSort: { key: 'registered', direction: 'asc' },
+    deletingPlatform: false,
   };
   let toastTimer;
   let registrationsRequest = 0;
@@ -86,7 +89,7 @@
       : '首次访问请设置管理员账号。';
     $('confirm-field').classList.toggle('hidden', login);
     $('auth-confirm').required = !login;
-    $('auth-password').minLength = login ? 1 : 12;
+    $('auth-password').minLength = login ? 1 : 10;
     $('auth-password').autocomplete = login ? 'current-password' : 'new-password';
     $('auth-submit').textContent = login ? '登录并进入后台' : '完成设置';
     state.initialized = login;
@@ -120,10 +123,6 @@
     const currentIds = new Set(state.mailboxes.map((mailbox) => mailbox.id));
     for (const id of state.selectedIds) if (!currentIds.has(id)) state.selectedIds.delete(id);
     state.platforms = platforms.platforms;
-    if (!state.platformId && state.platforms.length) state.platformId = state.platforms[0].id;
-    if (state.platformId && !state.platforms.some((item) => item.id === state.platformId)) {
-      state.platformId = state.platforms[0]?.id || null;
-    }
     renderPlatformSelect();
     await loadRegistrations();
     renderAll();
@@ -131,9 +130,18 @@
 
   function renderPlatformSelect() {
     const select = $('platform-select');
-    select.innerHTML = '<option value="">请选择平台</option>' + state.platforms
+    const search = $('platform-name-search').value.trim().toLowerCase();
+    const platforms = state.platforms.filter((platform) => platform.name.toLowerCase().includes(search));
+    const previousId = state.platformId;
+    if (!platforms.some((platform) => platform.id === state.platformId)) {
+      state.platformId = platforms[0]?.id || null;
+    }
+    select.innerHTML = `<option value="">${search && !platforms.length ? '没有匹配的平台' : '请选择平台'}</option>` + platforms
       .map((platform) => `<option value="${platform.id}">${escapeHtml(platform.name)}</option>`).join('');
     select.value = state.platformId || '';
+    select.disabled = !platforms.length;
+    $('delete-platform-button').disabled = !state.platformId || state.deletingPlatform;
+    return previousId !== state.platformId;
   }
 
   async function loadRegistrations() {
@@ -167,17 +175,49 @@
       <button type="button" class="danger-link" data-action="delete" data-id="${mailbox.id}">删除</button></div>`;
   }
 
+  function sortRows(rows, sort) {
+    const direction = sort.direction === 'asc' ? 1 : -1;
+    const value = (row) => {
+      if (sort.key === 'daysSince') return daysSince(row.lastReceivedAt);
+      if (sort.key === 'lastReceivedAt' || sort.key === 'lastCheckedAt') {
+        const timestamp = row[sort.key] ? Date.parse(row[sort.key]) : NaN;
+        return Number.isNaN(timestamp) ? null : timestamp;
+      }
+      return row[sort.key];
+    };
+    rows.sort((a, b) => {
+      const left = value(a);
+      const right = value(b);
+      // Unchecked or missing values stay at the bottom in either direction.
+      if (left == null && right != null) return 1;
+      if (right == null && left != null) return -1;
+      let comparison = 0;
+      if (left != null && right != null) {
+        comparison = typeof left === 'string' ? left.localeCompare(right) : Number(left) - Number(right);
+      }
+      return direction * comparison || a.email.localeCompare(b.email);
+    });
+    return rows;
+  }
+
+  function renderSortHeaders(table) {
+    const sort = state[`${table}Sort`];
+    document.querySelectorAll(`[data-sort-table="${table}"]`).forEach((button) => {
+      const active = button.dataset.sortKey === sort.key;
+      button.closest('th').setAttribute('aria-sort', active
+        ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+      button.querySelector('.sort-indicator').textContent = active ? (sort.direction === 'asc' ? '↑' : '↓') : '';
+      const nextDirection = active && sort.direction === 'asc' ? '降序' : '升序';
+      button.title = `点击按${button.querySelector('.sort-label').textContent}${nextDirection}排序`;
+    });
+  }
+
   function renderAll() {
     const mailboxes = [...state.mailboxes];
     const search = $('all-search').value.trim().toLowerCase();
     const filtered = mailboxes.filter((mailbox) => mailbox.email.toLowerCase().includes(search));
-    const direction = $('all-sort').value === 'newest' ? -1 : 1;
-    filtered.sort((a, b) => {
-      if (!a.lastReceivedAt && !b.lastReceivedAt) return a.email.localeCompare(b.email);
-      if (!a.lastReceivedAt) return 1;
-      if (!b.lastReceivedAt) return -1;
-      return direction * (Date.parse(a.lastReceivedAt) - Date.parse(b.lastReceivedAt));
-    });
+    sortRows(filtered, state.allSort);
+    renderSortHeaders('all');
     $('stat-count').textContent = String(mailboxes.length);
     const ages = mailboxes.map((mailbox) => daysSince(mailbox.lastReceivedAt)).filter((days) => days !== null);
     $('stat-oldest').textContent = ages.length ? `${Math.max(...ages)} 天` : '—';
@@ -203,15 +243,12 @@
     const rows = [...state.registrations];
     const search = $('platform-search').value.trim().toLowerCase();
     const filtered = rows.filter((row) => row.email.toLowerCase().includes(search));
-    const registeredFirst = $('platform-sort').value === 'registered';
-    filtered.sort((a, b) => {
-      if (a.registered !== b.registered) return registeredFirst ? (a.registered ? -1 : 1) : (a.registered ? 1 : -1);
-      return a.email.localeCompare(b.email);
-    });
+    sortRows(filtered, state.platformSort);
+    renderSortHeaders('platform');
     const registeredCount = rows.filter((row) => row.registered).length;
     $('platform-summary').textContent = platform
       ? `${rows.length - registeredCount} 未注册 / ${registeredCount} 已注册`
-      : '添加平台后，所有邮箱默认未注册。';
+      : (state.platforms.length ? '请选择或搜索平台。' : '添加平台后，所有邮箱默认未注册。');
     $('platform-list-count').textContent = platform ? `展示 ${filtered.length} / ${rows.length} 个邮箱` : '请选择或添加平台';
     $('platform-rows').innerHTML = platform && filtered.length ? filtered.map((row) => `
       <tr><td>${escapeHtml(row.email)}</td>
@@ -224,9 +261,25 @@
   function openDialog(id) { $(id).showModal(); }
   function closeDialog(id) { $(id).close(); }
 
+  function setMailboxMode(mode) {
+    const bulk = mode === 'bulk' && !state.editingId;
+    state.mailboxMode = bulk ? 'bulk' : 'single';
+    for (const name of ['single', 'bulk']) {
+      const active = name === state.mailboxMode;
+      $(`mailbox-${name}-tab`).classList.toggle('active', active);
+      $(`mailbox-${name}-tab`).setAttribute('aria-selected', String(active));
+      $(`mailbox-${name}-panel`).classList.toggle('hidden', !active);
+      $(`mailbox-${name}-panel`).disabled = !active;
+    }
+    $('mailbox-submit').textContent = bulk ? '批量添加' : '保存邮箱';
+  }
+
   function openMailboxForm(id = null) {
     state.editingId = id;
     const mailbox = state.mailboxes.find((item) => item.id === id);
+    $('mailbox-form').reset();
+    $('mailbox-mode-tabs').classList.toggle('hidden', !!mailbox);
+    setMailboxMode('single');
     $('mailbox-modal-title').textContent = mailbox ? '编辑邮箱' : '添加邮箱';
     $('mailbox-email').value = mailbox?.email || '';
     $('mailbox-client').value = mailbox?.clientId || '';
@@ -259,7 +312,7 @@
     state.detailId = id;
     state.detailFolder = 'inbox';
     $('detail-title').textContent = mailbox.email;
-    $('detail-meta').textContent = `上次收信：${receivedLabel(mailbox, true)} · 上次检查：${formatDate(mailbox.lastCheckedAt, true)}`;
+    $('detail-meta').textContent = `上次收信：${receivedLabel(mailbox, true)}\n上次检查：${formatDate(mailbox.lastCheckedAt, true)}`;
     openDialog('detail-dialog');
     await loadMessages();
   }
@@ -272,7 +325,7 @@
     ]);
     state.messages = { inbox: inbox.messages, junk: junk.messages };
     const mailbox = state.mailboxes.find((item) => item.id === state.detailId);
-    if (mailbox) $('detail-meta').textContent = `上次收信：${receivedLabel(mailbox, true)} · 上次检查：${formatDate(mailbox.lastCheckedAt, true)}`;
+    if (mailbox) $('detail-meta').textContent = `上次收信：${receivedLabel(mailbox, true)}\n上次检查：${formatDate(mailbox.lastCheckedAt, true)}`;
     renderMessages();
   }
 
@@ -332,9 +385,17 @@
     button.addEventListener('click', () => setPage(button.dataset.page));
   });
   $('all-search').addEventListener('input', renderAll);
-  $('all-sort').addEventListener('change', renderAll);
   $('platform-search').addEventListener('input', renderPlatform);
-  $('platform-sort').addEventListener('change', renderPlatform);
+  document.querySelectorAll('[data-sort-table]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const table = button.dataset.sortTable;
+      const sort = state[`${table}Sort`];
+      const key = button.dataset.sortKey;
+      sort.direction = sort.key === key && sort.direction === 'asc' ? 'desc' : 'asc';
+      sort.key = key;
+      if (table === 'all') renderAll(); else renderPlatform();
+    });
+  });
   $('all-rows').addEventListener('click', onRowAction);
   $('all-rows').addEventListener('change', (event) => {
     const id = Number(event.target.dataset.selectMailbox);
@@ -382,11 +443,47 @@
   });
   $('platform-rows').addEventListener('click', onRowAction);
   $('add-mailbox-button').addEventListener('click', () => openMailboxForm());
-  $('import-button').addEventListener('click', () => openDialog('import-dialog'));
+  document.querySelectorAll('[data-mailbox-mode]').forEach((button) => {
+    button.addEventListener('click', () => setMailboxMode(button.dataset.mailboxMode));
+  });
+  $('change-password-button').addEventListener('click', () => {
+    $('password-form').reset();
+    openDialog('password-dialog');
+  });
+  $('password-dialog').addEventListener('close', () => $('password-form').reset());
   $('add-platform-button').addEventListener('click', () => openDialog('platform-dialog'));
+  $('platform-name-search').addEventListener('input', async () => {
+    if (!renderPlatformSelect()) return;
+    state.registrations = [];
+    renderPlatform();
+    try { await loadRegistrations(); } catch (error) { toast(error.message, true); }
+  });
   $('platform-select').addEventListener('change', async (event) => {
     state.platformId = Number(event.target.value) || null;
+    $('delete-platform-button').disabled = !state.platformId || state.deletingPlatform;
+    state.registrations = [];
+    renderPlatform();
     try { await loadRegistrations(); } catch (error) { toast(error.message, true); }
+  });
+  $('delete-platform-button').addEventListener('click', async () => {
+    const platform = state.platforms.find((item) => item.id === state.platformId);
+    if (!platform || state.deletingPlatform) return;
+    if (!confirm(`删除平台“${platform.name}”？该平台的邮箱注册状态也会删除，邮箱资料和已保存邮件会保留。`)) return;
+    state.deletingPlatform = true;
+    $('delete-platform-button').disabled = true;
+    try {
+      await api('DELETE', `/api/platforms/${platform.id}`, {});
+      if (state.platformId === platform.id) {
+        state.platformId = null;
+        state.registrations = [];
+      }
+      await loadData();
+      toast(`已删除平台“${platform.name}”`);
+    } catch (error) { toast(error.message, true); }
+    finally {
+      state.deletingPlatform = false;
+      $('delete-platform-button').disabled = !state.platformId;
+    }
   });
   $('detail-refresh').addEventListener('click', async () => {
     const button = $('detail-refresh');
@@ -446,38 +543,56 @@
     showAuth(true);
   });
 
-  $('mailbox-form').addEventListener('submit', async (event) => {
+  $('password-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const body = { email: $('mailbox-email').value.trim(), clientId: $('mailbox-client').value.trim(), refreshToken: $('mailbox-token').value.trim() };
+    if ($('new-password').value !== $('confirm-new-password').value) {
+      return toast('两次输入的新密码不一致', true);
+    }
+    const button = $('password-submit');
+    button.disabled = true;
     try {
-      if (state.editingId) await api('PUT', `/api/mailboxes/${state.editingId}`, body);
-      else await api('POST', '/api/mailboxes', body);
-      closeDialog('mailbox-dialog');
-      await loadData();
-      toast(state.editingId ? '邮箱已更新' : '邮箱已添加');
+      const result = await api('POST', '/api/auth/password', {
+        currentPassword: $('current-password').value, newPassword: $('new-password').value,
+      });
+      state.csrf = result.csrfToken;
+      closeDialog('password-dialog');
+      toast('密码已修改，其他登录会话已退出');
     } catch (error) { toast(error.message, true); }
+    finally { button.disabled = false; }
   });
 
-  $('import-form').addEventListener('submit', async (event) => {
+  $('mailbox-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    let text = $('import-text').value.trim();
-    const file = $('import-file').files[0];
-    if (!text && file) text = await file.text();
-    if (!text) return toast('请先选择文件或粘贴内容', true);
+    const button = $('mailbox-submit');
+    button.disabled = true;
     try {
-      const result = await api('POST', '/api/mailboxes/import', { text });
-      closeDialog('import-dialog');
-      $('import-text').value = '';
-      $('import-file').value = '';
+      let message;
+      if (state.mailboxMode === 'bulk') {
+        let text = $('import-text').value.trim();
+        const file = $('import-file').files[0];
+        if (!text && file) text = await file.text();
+        if (!text) return toast('请先粘贴邮箱内容或选择文件', true);
+        const result = await api('POST', '/api/mailboxes/import', { text });
+        message = `已导入 ${result.count} 行邮箱`;
+      } else {
+        const body = { email: $('mailbox-email').value.trim(), clientId: $('mailbox-client').value.trim(), refreshToken: $('mailbox-token').value.trim() };
+        if (state.editingId) await api('PUT', `/api/mailboxes/${state.editingId}`, body);
+        else await api('POST', '/api/mailboxes', body);
+        message = state.editingId ? '邮箱已更新' : '邮箱已添加';
+      }
+      closeDialog('mailbox-dialog');
+      $('mailbox-form').reset();
       await loadData();
-      toast(`已导入 ${result.count} 行邮箱`);
+      toast(message);
     } catch (error) { toast(error.message, true); }
+    finally { button.disabled = false; }
   });
 
   $('platform-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     try {
       const result = await api('POST', '/api/platforms', { name: $('platform-name').value.trim() });
+      $('platform-name-search').value = '';
       state.platformId = result.platform.id;
       closeDialog('platform-dialog');
       $('platform-name').value = '';
