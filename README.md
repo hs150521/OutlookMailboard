@@ -2,7 +2,7 @@
 
 一套供单个管理员使用的轻量多邮箱管理后台。集中查看 Outlook 邮箱最近收到邮件的时间，并按平台记录每个邮箱是否注册过。浏览器只负责操作；邮箱授权、平台状态及已读取邮件保存在服务器端。
 
-本项目是独立实现，功能思路参考了 [MS_OAuth2API_Next](https://github.com/HChaoHui/MS_OAuth2API_Next)（作者在上游项目标注为 Unix）。没有复制其前端、后端源码或 [Docker PR #1](https://github.com/HChaoHui/MS_OAuth2API_Next/pull/1) 的代码；项目源码按本仓库的 [MIT 许可证](LICENSE) 发布。依赖包各自保留其许可证。Outlook 是 Microsoft 的商标，本项目与 Microsoft 没有关联。
+本项目是独立实现，功能思路参考了 [MS_OAuth2API_Next](https://github.com/HChaoHui/MS_OAuth2API_Next)；项目源码按本仓库的 [MIT 许可证](LICENSE) 发布。依赖包各自保留其许可证。Outlook 是 Microsoft 的商标，本项目与 Microsoft 没有关联。
 
 ## 功能
 
@@ -48,4 +48,4 @@ HOST=127.0.0.1 npm start
 
 管理员密码使用 `scrypt` 哈希，浏览器会话使用 HttpOnly、SameSite=Strict Cookie 和 CSRF 校验。首次设置没有默认密码。刷新令牌在数据库中加密保存；如不提供 `MAILBOARD_ENCRYPTION_KEY`，应用会在数据目录生成持久密钥。正式对公网开放时请使用 HTTPS，并由可信反向代理转发。仅在这种部署下设置 `TRUST_PROXY=1`。
 
-本项目面向个人约 30 个邮箱，不提供多用户权限、自动收件任务或向外开放的邮件 API。
+本项目暂不计划提供多用户权限、自动收件任务或向外开放的邮件 API。
