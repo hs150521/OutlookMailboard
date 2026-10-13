@@ -12,8 +12,10 @@ class MailError extends Error {
   }
 }
 
-function plainText(value) {
-  return String(value || '')
+function plainText(value, isHtml = false) {
+  const text = String(value || '');
+  if (!isHtml) return text.slice(0, 50000);
+  return text
     .replace(/<\s*br\s*\/?\s*>/gi, '\n')
     .replace(/<\s*\/p\s*>/gi, '\n')
     .replace(/<[^>]+>/g, '')
@@ -77,7 +79,7 @@ function createMailClient({ fetchImpl = globalThis.fetch, ImapClass = ImapFlow }
     }
     const data = await responseJson(response, '读取邮件');
     return (data.value || []).map((item) => {
-      const bodyText = plainText(item.body?.content || item.bodyPreview);
+      const bodyText = plainText(item.body?.content || item.bodyPreview, item.body?.contentType?.toLowerCase() === 'html');
       return {
         id: item.id,
         sender: item.from?.emailAddress?.address || '',
@@ -112,16 +114,17 @@ function createMailClient({ fetchImpl = globalThis.fetch, ImapClass = ImapFlow }
       if (!total) return [];
       const first = Math.max(1, total - MAX_MESSAGES + 1);
       const messages = [];
-      for await (const item of client.fetch(`${first}:*`, { source: true, envelope: true, uid: true })) {
+      for await (const item of client.fetch(`${first}:*`, { source: true, envelope: true, uid: true, internalDate: true })) {
         const parsed = await simpleParser(item.source);
-        const bodyText = plainText(parsed.text || parsed.html || '');
+        const bodyText = plainText(parsed.text || parsed.html || '', !parsed.text && !!parsed.html);
+        const receivedDate = item.internalDate ? new Date(item.internalDate) : parsed.date;
         messages.push({
           id: String(item.uid),
           sender: parsed.from?.text || '',
           subject: parsed.subject || '',
           preview: bodyText.slice(0, 300),
           bodyText,
-          receivedAt: parsed.date ? parsed.date.toISOString() : null,
+          receivedAt: receivedDate && Number.isFinite(receivedDate.getTime()) ? receivedDate.toISOString() : null,
         });
       }
       return messages.sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)));
